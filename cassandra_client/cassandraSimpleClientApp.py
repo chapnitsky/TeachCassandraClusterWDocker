@@ -5,10 +5,11 @@ from cassandra.query import SimpleStatement
 from cassandra import ConsistencyLevel
 
 # Configuration
-CLUSTER_HOSTS = os.getenv('CLUSTER_HOSTS', 'localhost').split(',')  # Fetch from environment variable
+CLUSTER_HOSTS = os.getenv('CLUSTER_HOSTS', 'localhost').split(
+    ',')  # Fetch from environment variable
 CASSANDRA_PORT = 9042
 KEYSPACE = 'demo'
-TABLE = 'users'
+TABLE = 'birds_tracking'
 
 # Optional: Authentication (if enabled)
 # auth_provider = PlainTextAuthProvider(username='your_username', password='your_password')
@@ -28,37 +29,45 @@ session.execute(f"""
 session.set_keyspace(KEYSPACE)
 
 # Create Table if it doesn't exist
-session.execute(f"""
-    CREATE TABLE IF NOT EXISTS {TABLE} (
-        lastname text PRIMARY KEY,
-        age int,
-        city text,
-        email text,
-        firstname text
-    )
+session.execute("""
+    CREATE TABLE IF NOT EXISTS birds_tracking (
+        bird_id UUID,
+        date text,
+        timestamp timestamp,
+        latitude double,
+        longitude double,
+        PRIMARY KEY ((bird_id, date), timestamp)
+    ) WITH CLUSTERING ORDER BY (timestamp DESC);
 """)
 
 # Insert a new user
-def insert_user(lastname, age, city, email, firstname):
+
+
+def insert_user(id, date, timestamp, latitude, longitude):
     insert_stmt = session.prepare(f"""
-        INSERT INTO {TABLE} (lastname, age, city, email, firstname)
+        INSERT INTO {TABLE} (bird_id, date, timestamp, latitude, longitude)
         VALUES (?, ?, ?, ?, ?)
     """)
-    session.execute(insert_stmt, (lastname, age, city, email, firstname))
-    print(f"Inserted user: {firstname} {lastname}")
+    session.execute(insert_stmt, (id, date, timestamp, latitude, longitude))
+    print(f"Inserted user: {id} {date}")
 
 # Read user information
+
+
 def get_user(lastname):
     select_stmt = session.prepare(f"""
         SELECT firstname, age, city, email FROM {TABLE} WHERE lastname = ?
     """)
     row = session.execute(select_stmt, (lastname,)).one()
     if row:
-        print(f"User Details - First Name: {row.firstname}, Age: {row.age}, City: {row.city}, Email: {row.email}")
+        print(
+            f"User Details - First Name: {row.firstname}, Age: {row.age}, City: {row.city}, Email: {row.email}")
     else:
         print(f"No user found with lastname: {lastname}")
 
 # Update user's age
+
+
 def update_user_age(lastname, new_age):
     update_stmt = session.prepare(f"""
         UPDATE {TABLE} SET age = ? WHERE lastname = ?
@@ -67,12 +76,15 @@ def update_user_age(lastname, new_age):
     print(f"Updated age for user with lastname: {lastname}")
 
 # Delete a user
+
+
 def delete_user(lastname):
     delete_stmt = session.prepare(f"""
         DELETE FROM {TABLE} WHERE lastname = ?
     """)
     session.execute(delete_stmt, (lastname,))
     print(f"Deleted user with lastname: {lastname}")
+
 
 # Example usage
 if __name__ == "__main__":
