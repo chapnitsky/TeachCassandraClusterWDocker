@@ -1,36 +1,29 @@
 import os
+import uuid
+import time
+from datetime import datetime, timedelta
 from cassandra.cluster import Cluster
-from cassandra.auth import PlainTextAuthProvider
 from cassandra.query import SimpleStatement
 from cassandra import ConsistencyLevel
 
-# Configuration
-CLUSTER_HOSTS = os.getenv('CLUSTER_HOSTS', 'localhost').split(
-    ',')  # Fetch from environment variable
+# Config
+CLUSTER_HOSTS = os.getenv('CLUSTER_HOSTS', 'localhost').split(',')
 CASSANDRA_PORT = 9042
 KEYSPACE = 'demo'
 TABLE = 'birds_tracking'
 
-# Optional: Authentication (if enabled)
-# auth_provider = PlainTextAuthProvider(username='your_username', password='your_password')
-# cluster = Cluster(contact_points=CLUSTER_HOSTS, port=CASSANDRA_PORT, auth_provider=auth_provider)
-
-# Without authentication
 cluster = Cluster(contact_points=CLUSTER_HOSTS, port=CASSANDRA_PORT)
 session = cluster.connect()
 
-# Create Keyspace if it doesn't exist
+# Setup
 session.execute(f"""
     CREATE KEYSPACE IF NOT EXISTS {KEYSPACE}
     WITH REPLICATION = {{ 'class': 'SimpleStrategy', 'replication_factor': 1 }}
 """)
-
-# Set the keyspace
 session.set_keyspace(KEYSPACE)
 
-# Create Table if it doesn't exist
-session.execute("""
-    CREATE TABLE IF NOT EXISTS birds_tracking (
+session.execute(f"""
+    CREATE TABLE IF NOT EXISTS {TABLE} (
         bird_id UUID,
         date text,
         timestamp timestamp,
@@ -40,61 +33,65 @@ session.execute("""
     ) WITH CLUSTERING ORDER BY (timestamp DESC);
 """)
 
-# Insert a new user
+# --------- Bird Client ---------
+bird_ids = [uuid.uuid4() for _ in range(10)]
+base_time = datetime.utcnow()
 
-
-def insert_user(id, date, timestamp, latitude, longitude):
-    insert_stmt = session.prepare(f"""
+def insert_bird_location(bird_id, date_str, timestamp, lat, lon):
+    stmt = session.prepare(f"""
         INSERT INTO {TABLE} (bird_id, date, timestamp, latitude, longitude)
         VALUES (?, ?, ?, ?, ?)
     """)
-    session.execute(insert_stmt, (id, date, timestamp, latitude, longitude))
-    print(f"Inserted user: {id} {date}")
+    future = session.execute_async(stmt.bind((bird_id, date_str, timestamp, lat, lon)))
+    future.add_callbacks(
+        callback=lambda _: print(f"Inserted: {bird_id} @ {timestamp}"),
+        errback=lambda exc: print(f"Error: {exc}")
+    )
+    trace = future.get_query_trace()
+    print_trace(trace)
 
-# Read user information
+def print_trace(trace):
+    if not trace: return
+    print(f"[TRACE] Coordinator: {trace.coordinator}")
+    for event in trace.events:
+        print(f"[{event.source}] {event.description} at {event.timestamp}")
 
+print("🚀 Bird Client Running...")
+for bird_id in bird_ids:
+    for i in range(21):  # Initial + 20 updates
+        ts = base_time + timedelta(minutes=i)
+        date_str = ts.strftime('%Y-%m-%d')
+        lat = 30.0 + i * 0.01
+        lon = 34.0 + i * 0.01
+        insert_bird_location(bird_id, date_str, ts, lat, lon)
+        time.sleep(0.1)  # simulate 1 minute delay as 0.1s
 
-def get_user(lastname):
-    select_stmt = session.prepare(f"""
-        SELECT firstname, age, city, email FROM {TABLE} WHERE lastname = ?
+# --------- Tracker Client ---------
+def query_latest_location(bird_id, date_str):
+    stmt = session.prepare(f"""
+        SELECT * FROM {TABLE}
+        WHERE bird_id = ? AND date = ?
+        LIMIT 1
     """)
-    row = session.execute(select_stmt, (lastname,)).one()
-    if row:
-        print(
-            f"User Details - First Name: {row.firstname}, Age: {row.age}, City: {row.city}, Email: {row.email}")
-    else:
-        print(f"No user found with lastname: {lastname}")
+    future = session.execute_async(stmt.bind((bird_id, date_str)))
+    result = future.result()
+    trace = future.get_query_trace()
+    print_trace(trace)
 
-# Update user's age
+    if result:
+        for row in result:
+            return f"{bird_id},{row.timestamp},{row.latitude},{row.longitude}"
+    return None
 
+print("\n🔍 Tracker Client Logging...")
+with open("tracker_log.csv", "w") as log_file:
+    log_file.write("bird_id,timestamp,latitude,longitude\n")
+    for bird_id in bird_ids:
+        date_str = base_time.strftime('%Y-%m-%d')
+        latest = query_latest_location(bird_id, date_str)
+        if latest:
+            log_file.write(f"{latest}\n")
 
-def update_user_age(lastname, new_age):
-    update_stmt = session.prepare(f"""
-        UPDATE {TABLE} SET age = ? WHERE lastname = ?
-    """)
-    session.execute(update_stmt, (new_age, lastname))
-    print(f"Updated age for user with lastname: {lastname}")
-
-# Delete a user
-
-
-def delete_user(lastname):
-    delete_stmt = session.prepare(f"""
-        DELETE FROM {TABLE} WHERE lastname = ?
-    """)
-    session.execute(delete_stmt, (lastname,))
-    print(f"Deleted user with lastname: {lastname}")
-
-
-# Example usage
-if __name__ == "__main__":
-    insert_user('Doe', 30, 'New York', 'jdoe@example.com', 'John')
-    get_user('Doe')
-    update_user_age('Doe', 31)
-    get_user('Doe')
-    delete_user('Doe')
-    get_user('Doe')
-
-    # Close the session and cluster connection
-    session.shutdown()
-    cluster.shutdown()
+# Shutdown
+session.shutdown()
+cluster.shutdown()
