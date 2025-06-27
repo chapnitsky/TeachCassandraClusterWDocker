@@ -143,3 +143,27 @@ More details about the install: <https://hub.docker.com/_/cassandra>
   - VS Code editor installed.
 
 ![](images/Aspose.Words.13bc9ca2-bd0c-4877-a47a-065e36f68c58.003.png)
+
+
+### Our work, Doron & Netanel
+- `docker compose up -d`
+- `docker exec -it cassandra-client bash`
+  NOW INSIDE THE CLIENT CONTAINER
+- `export ROLE=bird`
+- `python3 simpleClient.py`
+  GENERATED BIRD DATA
+- `export ROLE=tracker`
+- `python3 simpleClient.py`
+ GENERATED LOG FILE by TRACKER, called "tracker_log.csv"
+
+
+
+
+
+
+
+
+
+
+
+
