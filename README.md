@@ -148,13 +148,13 @@ More details about the install: <https://hub.docker.com/_/cassandra>
 ### Our work, Doron & Netanel
 - `docker compose up -d`
 - `docker exec -it cassandra-client bash`
-  NOW INSIDE THE CLIENT CONTAINER
+  - NOW INSIDE THE CLIENT CONTAINER
 - `export ROLE=bird`
 - `python3 simpleClient.py`
-  GENERATED BIRD DATA
+  - GENERATED BIRD DATA
 - `export ROLE=tracker`
 - `python3 simpleClient.py`
- GENERATED LOG FILE by TRACKER, called "tracker_log.csv"
+  - GENERATED LOG FILE by TRACKER, called "tracker_log.csv"
 
 
 
