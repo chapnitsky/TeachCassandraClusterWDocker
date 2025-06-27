@@ -11,7 +11,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
-COPY cassandraSimpleClientApp.py ./
+COPY simpleClient.py ./
 
 # Set the default command to run the application
-CMD ["python3", "cassandraSimpleClientApp.py"]
+CMD ["python3", "simpleClient.py"]
