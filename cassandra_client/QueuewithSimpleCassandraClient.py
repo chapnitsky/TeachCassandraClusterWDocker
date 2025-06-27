@@ -1,45 +1,63 @@
-import threading
+import uuid
+import time
 import queue
+import threading
+from datetime import datetime, timedelta
 from cassandra.cluster import Cluster
-from cassandra.query import SimpleStatement
 
-# Initialize Cassandra connection
 cluster = Cluster(['127.0.0.1'])
-session = cluster.connect('your_keyspace')
+session = cluster.connect('demo')
+TABLE = 'birds_tracking'
 
-# Create a thread-safe queue
-command_queue = queue.Queue()
+q = queue.Queue()
+bird_ids = [uuid.uuid4() for _ in range(10)]
+base_time = datetime.utcnow()
+
+def insert_task(bird_id, date, ts, lat, lon):
+    q.put(f"""
+        INSERT INTO {TABLE} (bird_id, date, timestamp, latitude, longitude)
+        VALUES ({bird_id}, '{date}', '{ts}', {lat}, {lon});
+    """)
+
+def tracker_task(bird_id, date):
+    q.put(f"""
+        SELECT * FROM {TABLE}
+        WHERE bird_id = {bird_id} AND date = '{date}'
+        LIMIT 1;
+    """)
 
 def worker():
     while True:
-        cql_query = command_queue.get()
-        if cql_query is None:
-            break  # Exit signal
+        cql = q.get()
+        if cql is None:
+            break
         try:
-            statement = SimpleStatement(cql_query)
-            session.execute(statement)
+            result = session.execute(cql)
+            print(f"Executed: {cql.strip()[:60]}...")
         except Exception as e:
-            # Handle exceptions (e.g., log or retry)
-            print(f"Error executing query: {e}")
+            print(f"Error: {e}")
         finally:
-            command_queue.task_done()
+            q.task_done()
 
-# Start worker thread
+# Start thread
 thread = threading.Thread(target=worker)
 thread.start()
 
-# Enqueue commands
-command_queue.put("INSERT INTO users (id, name) VALUES (1, 'Alice')")
-command_queue.put("UPDATE users SET name = 'Bob' WHERE id = 1")
-command_queue.put("DELETE FROM users WHERE id = 1")
+# Enqueue Bird insertions
+for bird_id in bird_ids:
+    for i in range(21):
+        ts = base_time + timedelta(minutes=i)
+        date_str = ts.strftime('%Y-%m-%d')
+        insert_task(bird_id, date_str, ts.isoformat(), 30.0 + i * 0.01, 34.0 + i * 0.01)
 
-# Wait for all tasks to complete
-command_queue.join()
+# Enqueue tracker queries
+for bird_id in bird_ids:
+    date_str = base_time.strftime('%Y-%m-%d')
+    tracker_task(bird_id, date_str)
 
-# Stop the worker
-command_queue.put(None)
+q.join()
+q.put(None)
 thread.join()
 
-# Close Cassandra connection
 session.shutdown()
 cluster.shutdown()
